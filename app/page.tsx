@@ -278,6 +278,13 @@ export default function MeetFlow() {
           <Badge variant="secondary" className="text-xs font-normal">
             Beta
           </Badge>
+          <Button
+            onClick={() => (window.location.href = "/about")}
+            size="sm"
+            className="ml-auto"
+          >
+            About
+          </Button>
         </div>
       </header>
 
