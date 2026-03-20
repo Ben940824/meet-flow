@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { Plus, Users, Calendar, User, CalendarCheck } from "lucide-react";
+import { Plus, Users, Calendar, User, CalendarCheck, Info } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +227,7 @@ export default function MeetFlow() {
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const [viewId, setViewId] = useState("xiao-liang");
+  const [activeTab, setActiveTab] = useState("members");
 
   const me = members.find((m) => m.id === "me")!;
   const others = members.filter((m) => m.id !== "me");
@@ -278,12 +279,19 @@ export default function MeetFlow() {
           <Badge variant="secondary" className="text-xs font-normal">
             Beta
           </Badge>
+          <Button
+            onClick={() => setActiveTab("about")}
+            size="sm"
+            className="ml-auto"
+          >
+            About
+          </Button>
         </div>
       </header>
 
       {/* ── Main ── */}
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <Tabs defaultValue="members">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-8 h-10">
             <TabsTrigger value="members" className="gap-1.5 text-sm">
               <Users className="w-3.5 h-3.5" />
@@ -300,6 +308,10 @@ export default function MeetFlow() {
             <TabsTrigger value="common" className="gap-1.5 text-sm">
               <CalendarCheck className="w-3.5 h-3.5" />
               共同空閒
+            </TabsTrigger>
+            <TabsTrigger value="about" className="gap-1.5 text-sm">
+              <Info className="w-3.5 h-3.5" />
+              About
             </TabsTrigger>
           </TabsList>
 
@@ -493,6 +505,23 @@ export default function MeetFlow() {
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Tab 5: About ── */}
+          <TabsContent value="about">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">About MeetFlow</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <p className="text-sm text-muted-foreground">
+                  MeetFlow 是一個小型團隊排程工具，可以快速找到大家共同空閒時間。
+                </p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  這個頁面是為了展示簡單的 About 功能。未來可以加入更多介紹、聯絡資訊等。
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </main>
