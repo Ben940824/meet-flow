@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { Plus, Users, Calendar, User, CalendarCheck } from "lucide-react";
+import { Plus, Users, Calendar, User, CalendarCheck, Info } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,17 +84,57 @@ const INITIAL_MEMBERS: Member[] = [
 
 // ─── Schedule Grid Component ──────────────────────────────────────────────────
 
+type DragState = {
+  startDay: number;
+  startHourIdx: number;
+  curDay: number;
+  curHourIdx: number;
+  filling: boolean; // true = turning slots ON, false = turning OFF
+};
+
 function ScheduleGrid({
   availability,
-  onToggle,
+  onBatchToggle,
   emerald = false,
 }: {
   availability: TimeSlot[];
-  onToggle?: (day: number, hour: number) => void;
+  onBatchToggle?: (slots: TimeSlot[], fill: boolean) => void;
   emerald?: boolean;
 }) {
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const dragging = useRef(false);
+
+  // Commit the selection when mouse is released anywhere
+  useEffect(() => {
+    function handleMouseUp() {
+      if (!dragging.current || !drag) return;
+      const d0 = Math.min(drag.startDay, drag.curDay);
+      const d1 = Math.max(drag.startDay, drag.curDay);
+      const h0 = Math.min(drag.startHourIdx, drag.curHourIdx);
+      const h1 = Math.max(drag.startHourIdx, drag.curHourIdx);
+      const selected: TimeSlot[] = [];
+      for (let d = d0; d <= d1; d++)
+        for (let hi = h0; hi <= h1; hi++)
+          selected.push(slot(d, HOURS[hi]));
+      onBatchToggle?.(selected, drag.filling);
+      dragging.current = false;
+      setDrag(null);
+    }
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, [drag, onBatchToggle]);
+
+  function inDragRect(d: number, hi: number): boolean {
+    if (!drag) return false;
+    const d0 = Math.min(drag.startDay, drag.curDay);
+    const d1 = Math.max(drag.startDay, drag.curDay);
+    const h0 = Math.min(drag.startHourIdx, drag.curHourIdx);
+    const h1 = Math.max(drag.startHourIdx, drag.curHourIdx);
+    return d >= d0 && d <= d1 && hi >= h0 && hi <= h1;
+  }
+
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto select-none">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr>
@@ -107,7 +147,7 @@ function ScheduleGrid({
           </tr>
         </thead>
         <tbody>
-          {HOURS.map((h) => (
+          {HOURS.map((h, hi) => (
             <tr key={h}>
               <td className="text-right pr-3 text-muted-foreground text-xs py-0.5 whitespace-nowrap">
                 {h}:00
@@ -115,16 +155,44 @@ function ScheduleGrid({
               {DAYS.map((_, d) => {
                 const s = slot(d, h);
                 const active = availability.includes(s);
-                const cellClass = active
-                  ? emerald
+                const inRect = inDragRect(d, hi);
+
+                let cellClass: string;
+                if (inRect) {
+                  // Preview: show what the result will be
+                  cellClass = drag!.filling
+                    ? "bg-primary/60 border-primary/60"
+                    : "bg-muted border-border opacity-40";
+                } else if (active) {
+                  cellClass = emerald
                     ? "bg-emerald-400 border-emerald-400"
-                    : "bg-primary border-primary"
-                  : "bg-muted border-border hover:bg-muted/60";
+                    : "bg-primary border-primary";
+                } else {
+                  cellClass = "bg-muted border-border hover:bg-muted/60";
+                }
+
                 return (
                   <td key={d} className="p-0.5">
                     <div
-                      className={`h-8 rounded border transition-colors ${cellClass} ${onToggle ? "cursor-pointer" : "cursor-default"}`}
-                      onClick={() => onToggle?.(d, h)}
+                      className={`h-8 rounded border transition-colors ${cellClass} ${onBatchToggle ? "cursor-pointer" : "cursor-default"}`}
+                      onMouseDown={(e) => {
+                        if (!onBatchToggle) return;
+                        e.preventDefault();
+                        dragging.current = true;
+                        setDrag({
+                          startDay: d,
+                          startHourIdx: hi,
+                          curDay: d,
+                          curHourIdx: hi,
+                          filling: !active,
+                        });
+                      }}
+                      onMouseOver={() => {
+                        if (!dragging.current) return;
+                        setDrag((prev) =>
+                          prev ? { ...prev, curDay: d, curHourIdx: hi } : prev
+                        );
+                      }}
                     />
                   </td>
                 );
@@ -159,6 +227,7 @@ export default function MeetFlow() {
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const [viewId, setViewId] = useState("xiao-liang");
+  const [activeTab, setActiveTab] = useState("members");
 
   const me = members.find((m) => m.id === "me")!;
   const others = members.filter((m) => m.id !== "me");
@@ -170,17 +239,16 @@ export default function MeetFlow() {
     ).map((h) => slot(d, h))
   );
 
-  function toggleMySlot(day: number, hour: number) {
-    const s = slot(day, hour);
+  function batchToggleMySlots(slots: TimeSlot[], fill: boolean) {
     setMembers((prev) =>
       prev.map((m) =>
         m.id !== "me"
           ? m
           : {
               ...m,
-              availability: m.availability.includes(s)
-                ? m.availability.filter((x) => x !== s)
-                : [...m.availability, s],
+              availability: fill
+                ? [...new Set([...m.availability, ...slots])]
+                : m.availability.filter((x) => !slots.includes(x)),
             }
       )
     );
@@ -211,12 +279,19 @@ export default function MeetFlow() {
           <Badge variant="secondary" className="text-xs font-normal">
             Beta
           </Badge>
+          <Button
+            onClick={() => setActiveTab("about")}
+            size="sm"
+            className="ml-auto"
+          >
+            About
+          </Button>
         </div>
       </header>
 
       {/* ── Main ── */}
       <main className="max-w-4xl mx-auto px-6 py-8">
-        <Tabs defaultValue="members">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-8 h-10">
             <TabsTrigger value="members" className="gap-1.5 text-sm">
               <Users className="w-3.5 h-3.5" />
@@ -233,6 +308,10 @@ export default function MeetFlow() {
             <TabsTrigger value="common" className="gap-1.5 text-sm">
               <CalendarCheck className="w-3.5 h-3.5" />
               共同空閒
+            </TabsTrigger>
+            <TabsTrigger value="about" className="gap-1.5 text-sm">
+              <Info className="w-3.5 h-3.5" />
+              About
             </TabsTrigger>
           </TabsList>
 
@@ -305,7 +384,7 @@ export default function MeetFlow() {
             <div className="mb-5">
               <h2 className="text-base font-semibold">我的時間表</h2>
               <p className="text-sm text-muted-foreground mt-0.5">
-                點擊格子來切換你的空閒時段
+                點擊或拖曳選取矩形範圍來批次切換空閒時段
               </p>
             </div>
             <Card>
@@ -318,7 +397,7 @@ export default function MeetFlow() {
                 />
                 <ScheduleGrid
                   availability={me.availability}
-                  onToggle={toggleMySlot}
+                  onBatchToggle={batchToggleMySlots}
                 />
               </CardContent>
             </Card>
@@ -426,6 +505,23 @@ export default function MeetFlow() {
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Tab 5: About ── */}
+          <TabsContent value="about">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">About MeetFlow</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <p className="text-sm text-muted-foreground">
+                  MeetFlow 是一個小型團隊排程工具，可以快速找到大家共同空閒時間。
+                </p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  這個頁面是為了展示簡單的 About 功能。未來可以加入更多介紹、聯絡資訊等。
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </main>
